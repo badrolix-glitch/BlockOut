@@ -1,0 +1,284 @@
+using Godot;
+using System.Collections.Generic;
+
+public partial class Main : Node3D
+{
+	private const int Width = 5;
+	private const int Depth = 5;
+	private const int Height = 12;
+
+	private Node3D _block;
+	private readonly HashSet<Vector3I> _occupied = new();
+	private float _fallTimer;
+	
+	private bool _gameOver;
+	private Label _gameOverLabel;
+	private Node3D _piecesRoot;
+
+
+	public override void _Ready()
+	{
+		var camera = new Camera3D
+		{
+			Position = new Vector3(0, 18, 16),
+			Current = true
+		};
+		AddChild(camera);
+		camera.LookAt(new Vector3(0, 5, 0), Vector3.Up);
+
+		var light = new DirectionalLight3D
+		{
+			RotationDegrees = new Vector3(-55, -35, 0),
+			LightEnergy = 1.5f
+		};
+		AddChild(light);
+		
+		var canvas = new CanvasLayer();
+		
+		AddChild(canvas);
+
+		var center = new CenterContainer();
+		center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		canvas.AddChild(center);
+
+		_gameOverLabel = new Label
+		{
+			Text = "GAME OVER",
+			Visible = false,
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center
+		};
+		_gameOverLabel.AddThemeFontSizeOverride("font_size", 48);
+		center.AddChild(_gameOverLabel);
+
+
+		for (int y = 0; y <= Height; y++)
+		{
+			AddBar(new Vector3(0, y, -Depth / 2f), new Vector3(Width, 0.04f, 0.04f));
+			AddBar(new Vector3(0, y, Depth / 2f), new Vector3(Width, 0.04f, 0.04f));
+			AddBar(new Vector3(-Width / 2f, y, 0), new Vector3(0.04f, 0.04f, Depth));
+			AddBar(new Vector3(Width / 2f, y, 0), new Vector3(0.04f, 0.04f, Depth));
+		}
+
+		_piecesRoot = new Node3D();
+		AddChild(_piecesRoot);
+
+		SpawnPiece();
+
+	}
+
+	private void AddBar(Vector3 position, Vector3 size)
+	{
+		var bar = new MeshInstance3D
+		{
+			Mesh = new BoxMesh { Size = size },
+			Position = position
+		};
+
+		AddChild(bar);
+	}
+
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (@event is not InputEventKey key || !key.Pressed || key.Echo)
+			return;
+
+		if (_gameOver)
+		{
+			if (key.Keycode == Key.R)
+				RestartGame();
+
+			return;
+		}
+
+		Vector3 move = key.Keycode switch
+		{
+			Key.Left => new Vector3(-1, 0, 0),
+			Key.Right => new Vector3(1, 0, 0),
+			Key.Up => new Vector3(0, 0, -1),
+			Key.Down => new Vector3(0, 0, 1),
+			_ => Vector3.Zero
+		};
+
+		Vector3I gridMove = new(
+			Mathf.RoundToInt(move.X),
+			0,
+			Mathf.RoundToInt(move.Z)
+		);
+
+		if (gridMove != Vector3I.Zero && CanMoveSideways(gridMove))
+		{
+			_block.Position += new Vector3(gridMove.X, 0, gridMove.Z);
+		}
+	}
+
+
+
+
+
+	private void RestartGame()
+	{
+		_piecesRoot.QueueFree();
+
+		_piecesRoot = new Node3D();
+		AddChild(_piecesRoot);
+
+		_occupied.Clear();
+		_fallTimer = 0f;
+		_gameOver = false;
+		_gameOverLabel.Visible = false;
+
+		SpawnPiece();
+	}
+
+
+
+	private void SpawnPiece()
+	{
+		_block = new Node3D
+		{
+			Position = new Vector3(-1f, 11.5f, -1f)
+		};
+
+		var material = new StandardMaterial3D
+		{
+			AlbedoColor = Colors.CornflowerBlue
+		};
+
+		Vector3[] shape =
+		{
+			new Vector3(0, 0, 0),
+			new Vector3(1, 0, 0),
+			new Vector3(0, 0, 1),
+			new Vector3(1, 0, 1)
+		};
+
+		foreach (Vector3 offset in shape)
+		{
+			var cube = new MeshInstance3D
+			{
+				Mesh = new BoxMesh { Size = new Vector3(0.9f, 0.9f, 0.9f) },
+				Position = offset,
+				MaterialOverride = material
+			};
+
+			_block.AddChild(cube);
+		}
+
+		_piecesRoot.AddChild(_block);
+		Vector3I origin = new(
+			Mathf.RoundToInt(_block.Position.X),
+			Mathf.RoundToInt(_block.Position.Y - 0.5f),
+			Mathf.RoundToInt(_block.Position.Z)
+		);
+
+		foreach (Vector3I cell in GetPieceCells())
+		{
+			if (_occupied.Contains(origin + cell))
+			{
+				_gameOver = true;
+				_gameOverLabel.Visible = true;
+				break;
+			}
+		}
+
+	}
+
+	private Vector3I[] GetPieceCells()
+	{
+		var cells = new List<Vector3I>();
+
+		foreach (Node child in _block.GetChildren())
+		{
+			if (child is not MeshInstance3D cube)
+				continue;
+
+			Vector3 local = cube.Position;
+			cells.Add(new Vector3I(
+				Mathf.RoundToInt(local.X),
+				Mathf.RoundToInt(local.Y),
+				Mathf.RoundToInt(local.Z)
+			));
+		}
+
+		return cells.ToArray();
+	}
+
+	private void LockPiece()
+	{
+		foreach (Vector3I cell in GetPieceCells())
+		{
+			_occupied.Add(cell + new Vector3I(
+				Mathf.RoundToInt(_block.Position.X),
+				Mathf.RoundToInt(_block.Position.Y - 0.5f),
+				Mathf.RoundToInt(_block.Position.Z)
+			));
+		}
+	}
+
+	private bool CanMoveDown()
+	{
+		Vector3I origin = new(
+			Mathf.RoundToInt(_block.Position.X),
+			Mathf.RoundToInt(_block.Position.Y - 0.5f),
+			Mathf.RoundToInt(_block.Position.Z)
+		);
+
+		foreach (Vector3I cell in GetPieceCells())
+		{
+			Vector3I below = origin + cell + Vector3I.Down;
+
+			if (below.Y < 0 || _occupied.Contains(below))
+				return false;
+		}
+
+		return true;
+	}
+
+	private bool CanMoveSideways(Vector3I move)
+	{
+		Vector3I origin = new(
+			Mathf.RoundToInt(_block.Position.X),
+			Mathf.RoundToInt(_block.Position.Y - 0.5f),
+			Mathf.RoundToInt(_block.Position.Z)
+		);
+
+		foreach (Vector3I cell in GetPieceCells())
+		{
+			Vector3I target = origin + cell + move;
+
+			if (target.X < -2 || target.X > 2 ||
+				target.Z < -2 || target.Z > 2 ||
+				_occupied.Contains(target))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	public override void _Process(double delta)
+	{
+		if (_block == null || _gameOver)
+			return;
+
+
+		_fallTimer += (float)delta;
+
+		if (_fallTimer < 0.5f)
+			return;
+
+		_fallTimer = 0f;
+
+		if (CanMoveDown())
+		{
+			_block.Position += Vector3.Down;
+		}
+		else
+		{
+			LockPiece();
+			SpawnPiece();
+		}
+	}
+}
