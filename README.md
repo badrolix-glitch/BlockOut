@@ -1,5 +1,9 @@
 # BlockOut
-A Tetris-style game from our childhood, with a third dimension added.
+A cross-platform 3D Tetris game in retro style. Like something very familiar from our childhood, but with the addition of a third dimension.
+
+Version 0.2.1 features quite a few changes:
+
+A number of minor changes have been made, such as replacing the default Gadot splash screen with a custom one "drawn" by my son using AI. This release also includes a Linux version, so you won't need programs like Wine or Proton to run the game.
 
 Version 0.2.0 features quite a few changes:
 
